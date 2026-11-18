@@ -41,9 +41,10 @@ df = pd.DataFrame(rows)
 df["forecast_date"] = pd.to_datetime(df["forecast_date"]).dt.date
 df["fetched_at"] = pd.Timestamp.now("UTC")
 client.load_table_from_dataframe(df, RAW_TBL, job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")).result()
-print(f"Loaded {len(df)} rows.")
+STG_TBL = f"{PROJECT}.{DATASET}.stg_station_daily_forecast"
+
 client.query(f"""
-CREATE OR REPLACE TABLE `{FCT_TBL}` CLUSTER BY station_id, month_num AS
+CREATE OR REPLACE TABLE `{STG_TBL}` CLUSTER BY station_id, month_num AS
 WITH live AS (
   SELECT trim(station_id) AS station_id, cast(forecast_date AS DATE) AS forecast_date,
     round(live_avg_temp_c, 1) AS avg_t, round(live_high_temp_c, 1) AS hi_t, round(live_low_temp_c, 1) AS lo_t,
@@ -73,4 +74,8 @@ SELECT
 FROM `{FCT_TBL}` T
 LEFT JOIN live S ON trim(T.station_id) = S.station_id AND T.forecast_date = S.forecast_date
 """).result()
+
+client.query(f"DROP TABLE IF EXISTS `{FCT_TBL}`").result()
+client.query(f"CREATE TABLE `{FCT_TBL}` CLUSTER BY station_id, month_num AS SELECT * FROM `{STG_TBL}`").result()
+client.query(f"DROP TABLE IF EXISTS `{STG_TBL}`").result()
 print("Blended fct_station_daily_forecast successfully!")
