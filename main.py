@@ -43,7 +43,7 @@ df["fetched_at"] = pd.Timestamp.now("UTC")
 client.load_table_from_dataframe(df, RAW_TBL, job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")).result()
 print(f"Loaded {len(df)} rows.")
 client.query(f"""
-CREATE OR REPLACE TABLE `{FCT_TBL}` AS
+CREATE OR REPLACE TABLE `{FCT_TBL}` CLUSTER BY station_id, month_num AS
 WITH live AS (
   SELECT trim(station_id) AS station_id, cast(forecast_date AS DATE) AS forecast_date,
     round(live_avg_temp_c, 1) AS avg_t, round(live_high_temp_c, 1) AS hi_t, round(live_low_temp_c, 1) AS lo_t,
