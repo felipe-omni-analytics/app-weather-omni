@@ -1,5 +1,7 @@
 import time, requests
 import pandas as pd
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from google.cloud import bigquery
 
 PROJECT = "dbt-bigquery-project-507410"
@@ -8,6 +10,10 @@ RAW_TBL = f"{PROJECT}.{DATASET}.raw_live_weather_forecast"
 FCT_TBL = f"{PROJECT}.{DATASET}.fct_station_daily_forecast"
 client = bigquery.Client(project=PROJECT)
 
+session = requests.Session()
+retries = Retry(total=5, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
+session.mount("https://", HTTPAdapter(max_retries=retries))
+
 stations = client.query(f"""
   SELECT station_id, latitude, longitude
   FROM `{PROJECT}.{DATASET}.dim_global_weather_stations`
@@ -15,16 +21,20 @@ stations = client.query(f"""
   ORDER BY CASE WHEN country_code IN ('EI','UK','US','BR','FR','GM','ES','IT','JP','AU') THEN 0 ELSE 1 END, FARM_FINGERPRINT(station_id)
   LIMIT 500
 """).to_dataframe()
+
 rows = []
 for i in range(0, len(stations), 50):
     b = stations.iloc[i:i+50]
     lats, lons = ",".join(b["latitude"].astype(str)), ",".join(b["longitude"].astype(str))
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lats}&longitude={lons}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,precipitation_probability_max,windspeed_10m_max,weathercode&forecast_days=16&timezone=UTC"
-    data = requests.get(url, timeout=30).json()
+    resp = session.get(url, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
     for idx, loc in enumerate(data if isinstance(data, list) else [data]):
         d = loc.get("daily", {})
         for k, f_date in enumerate(d.get("time", [])):
             rows.append({"station_id": str(b.iloc[idx]["station_id"]), "forecast_date": f_date, "live_high_temp_c": d["temperature_2m_max"][k], "live_low_temp_c": d["temperature_2m_min"][k], "live_avg_temp_c": d["temperature_2m_mean"][k], "live_precip_mm": d["precipitation_sum"][k], "live_rain_prob_pct": d["precipitation_probability_max"][k], "live_wind_kmh": d["windspeed_10m_max"][k], "weather_code": d["weathercode"][k]})
+    print(f"Batch {i//50 + 1}/10 complete")
     time.sleep(2.5)
 
 df = pd.DataFrame(rows)
@@ -32,6 +42,7 @@ df["forecast_date"] = pd.to_datetime(df["forecast_date"]).dt.date
 df["fetched_at"] = pd.Timestamp.utcnow()
 client.load_table_from_dataframe(df, RAW_TBL, job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")).result()
 print(f"Loaded {len(df)} rows.")
+
 client.query(f"""
 MERGE `{FCT_TBL}` T
 USING (
