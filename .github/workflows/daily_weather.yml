@@ -27,3 +27,4 @@ jobs:
 
       - name: Run Live Weather Ingestion & Merge
         run: python main.py
+          python snow_ingest.py
