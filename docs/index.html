@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global Weather & Snow Forecast</title>
+  <style>
+    html, body, #omni-embed {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #0f172a;
+    }
+    #omni-embed iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="omni-embed"></div>
+
+  <script type="module">
+    import { embedSsoIframe } from "https://esm.sh/@omni-co/embed";
+
+    async function initOmniEmbed() {
+      const res = await fetch("https://omni-embed-session.felipe-aac.workers.dev");
+      const { url } = await res.json();
+
+      embedSsoIframe({
+        url,
+        container: document.getElementById("omni-embed"),
+      });
+    }
+
+    initOmniEmbed();
+  </script>
+</body>
+</html>
